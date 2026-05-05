@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Secure Download</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="share-page">
+    <div class="share-card">
+        <h2>🔐 Secure Download</h2>
+
+        <form method="POST">
+            <input type="password" name="share_password" placeholder="Share Password">
+            <input type="password" name="file_password" placeholder="File Password" required>
+
+            <button type="submit">Download File</button>
+        </form>
+    </div>
+</div>
+
+</body>
+</html>
