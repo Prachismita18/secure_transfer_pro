@@ -1,12 +1,5 @@
-<<<<<<< HEAD
 flask
 cryptography
 gunicorn
 werkzeug
-=======
-flask
-cryptography
-gunicorn
-werkzeug
->>>>>>> ab8ff76b079682332e504619f8056edf865debe6
 pytz
