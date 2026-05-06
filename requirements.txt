@@ -3,3 +3,4 @@ cryptography
 gunicorn
 werkzeug
 pytz
+supabase

@@ -1,3 +1,4 @@
+from supabase import create_client, Client
 import secrets
 import pytz
 from datetime import datetime, timedelta
@@ -20,6 +21,11 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
 app = Flask(__name__)
+url = "https://rrvnbxivvcyrajydbfrj.supabase.co"
+
+key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydm5ieGl2dmN5cmFqeWRiZnJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwODE3MTAsImV4cCI6MjA5MzY1NzcxMH0.KrxIfaPbIT3skEjR5mL6wMLMhdaRYaPO9lk86rkUBj8"
+
+supabase: Client = create_client(url, key)
 app.secret_key = "supersecretkey"
 
 UPLOAD_FOLDER = "uploads"
@@ -157,29 +163,27 @@ def dashboard():
     if 'user' not in session:
         return redirect('/')
 
-    user_folder = os.path.join(
-        UPLOAD_FOLDER,
+    # ☁️ Files from Supabase Storage
+    files = []
+
+    response = supabase.storage.from_("files").list(
         session['user']
     )
 
-    files = []
+    for item in response:
 
-    if os.path.exists(user_folder):
+        name = item['name']
 
-        files = sorted(
-            os.listdir(user_folder),
-            key=lambda x: os.path.getmtime(
-                os.path.join(user_folder, x)
-            ),
-            reverse=True
-        )
+        if (
+            not name.endswith(".sig")
+            and not name.startswith("temp_")
+        ):
+            files.append(name)
 
-        files = [
-            f for f in files
-            if not f.endswith('.sig')
-            and not f.startswith('temp_')
-        ]
+    # 📌 Latest uploaded files first
+    files.reverse()
 
+    # 📝 Database Logs
     conn = sqlite3.connect('database.db')
     c = conn.cursor()
 
@@ -187,11 +191,12 @@ def dashboard():
     SELECT action, filename, time
     FROM logs
     WHERE username=?
-    ORDER BY time DESC
+    ORDER BY id DESC
     ''', (session['user'],))
 
     logs = c.fetchall()
 
+    # 🔗 Shared Links
     c.execute('''
     SELECT token, filename, expiry_time
     FROM shared_links
@@ -246,8 +251,10 @@ def upload():
 
     file_path = os.path.join(user_folder, filename)
 
-    with open(file_path, "wb") as f:
-        f.write(encrypted)
+    supabase.storage.from_("files").upload(
+    f"{session['user']}/{filename}",
+    encrypted
+    )
 
     signature = private_key.sign(
         encrypted,
@@ -304,8 +311,11 @@ def download(filename):
     if not os.path.exists(file_path):
         return "❌ File not found"
 
-    with open(file_path, "rb") as f:
-        encrypted = f.read()
+    response = supabase.storage.from_("files").download(
+    f"{session['user']}/{filename}"
+    )
+
+    encrypted = response
 
     try:
         with open(file_path + ".sig", "rb") as f:
@@ -410,11 +420,16 @@ def shared(token):
     c = conn.cursor()
 
     c.execute(
-        "SELECT filename, username, password_hash, expiry_time FROM shared_links WHERE token=?",
+        """
+        SELECT filename, username, password_hash, expiry_time
+        FROM shared_links
+        WHERE token=?
+        """,
         (token,)
     )
 
     row = c.fetchone()
+
     conn.close()
 
     if not row:
@@ -434,38 +449,52 @@ def shared(token):
         share_pwd = request.form.get('share_password')
         file_pwd = request.form.get('file_password')
 
+        # 🔐 Check share password
         if share_pwd_hash and not check_password_hash(
             share_pwd_hash,
             share_pwd
         ):
             return "Wrong share password ❌"
 
-        user_folder = os.path.join(UPLOAD_FOLDER, username)
-        file_path = os.path.join(user_folder, filename)
+        # ☁️ Download encrypted file from Supabase
+        try:
+            encrypted = supabase.storage.from_("files").download(
+                f"{username}/{filename}"
+            )
 
-        if not os.path.exists(file_path):
+        except:
             return "File not found ❌"
 
-        with open(file_path, "rb") as f:
-            encrypted = f.read()
-
+        # 🔑 Generate decryption key
         key = generate_key(file_pwd)
         cipher = Fernet(key)
 
+        # 🔓 Decrypt file
         try:
             decrypted = cipher.decrypt(encrypted)
+
         except:
             return "Wrong file password ❌"
 
+        # 📂 Temporary file path
+        temp_folder = "temp_downloads"
+
+        os.makedirs(temp_folder, exist_ok=True)
+
         temp_path = os.path.join(
-            user_folder,
+            temp_folder,
             "temp_" + filename
         )
 
+        # 💾 Save decrypted temporary file
         with open(temp_path, "wb") as f:
             f.write(decrypted)
 
-        return send_file(temp_path, as_attachment=True)
+        # 📥 Send file
+        return send_file(
+            temp_path,
+            as_attachment=True
+        )
 
     return render_template(
         'shared.html',
