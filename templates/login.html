@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <!DOCTYPE html>
 <html>
 <head>
@@ -24,4 +25,32 @@
 </div>
 
 </body>
+=======
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="login-page">
+    <div class="login-card">
+
+        <h2>🔐 Secure Login</h2>
+
+        <form action="/login" method="POST">
+            <input type="text" name="username" placeholder="Username" required>
+            <input type="password" name="password" placeholder="Password" required>
+
+            <button type="submit">Login</button>
+        </form>
+
+        <p>Don't have an account? <a href="/signup">Sign Up</a></p>
+
+    </div>
+</div>
+
+</body>
+>>>>>>> ab8ff76b079682332e504619f8056edf865debe6
 </html>
