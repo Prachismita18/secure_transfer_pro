@@ -1,9 +1,9 @@
+# app.py
 from supabase import create_client, Client
 import secrets
 import pytz
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
-import sqlite3
 import os
 import base64
 
@@ -13,30 +13,42 @@ from flask import (
     request,
     redirect,
     session,
-    send_file
+    send_file,
+    flash
 )
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
+# =========================
+# FLASK APP
+# =========================
+
 app = Flask(__name__)
+app.secret_key = "supersecretkey"
+
+# =========================
+# SUPABASE CONNECTION
+# =========================
+
 url = "https://rrvnbxivvcyrajydbfrj.supabase.co"
 
 key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydm5ieGl2dmN5cmFqeWRiZnJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwODE3MTAsImV4cCI6MjA5MzY1NzcxMH0.KrxIfaPbIT3skEjR5mL6wMLMhdaRYaPO9lk86rkUBj8"
 
 supabase: Client = create_client(url, key)
-app.secret_key = "supersecretkey"
 
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# 🔐 Generate encryption key
+# =========================
+# ENCRYPTION KEY GENERATOR
+# =========================
 
 def generate_key(password):
     return base64.urlsafe_b64encode(password.ljust(32).encode())
 
-# 🔑 Load RSA keys
+# =========================
+# LOAD RSA KEYS
+# =========================
+
 with open("private.pem", "rb") as f:
     private_key = serialization.load_pem_private_key(
         f.read(),
@@ -46,183 +58,179 @@ with open("private.pem", "rb") as f:
 with open("public.pem", "rb") as f:
     public_key = serialization.load_pem_public_key(f.read())
 
-# 🛠️ Initialize Database
+# =========================
+# HOME PAGE
+# =========================
 
-def init_db():
-    conn = sqlite3.connect('database.db')
-    c = conn.cursor()
-
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE,
-        password TEXT
-    )
-    ''')
-
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT,
-        action TEXT,
-        filename TEXT,
-        time TEXT
-    )
-    ''')
-
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS shared_links (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        token TEXT UNIQUE,
-        filename TEXT,
-        username TEXT,
-        password_hash TEXT,
-        expiry_time TEXT
-    )
-    ''')
-
-    conn.commit()
-    conn.close()
-
-init_db()
-
-# 🏠 Login Page
 @app.route('/')
-def login_page():
-    return render_template("login.html")
+def home():
+    return render_template('login.html')
 
-# 🔐 Login Logic
+# =========================
+# LOGIN
+# =========================
+
 @app.route('/login', methods=['POST'])
 def login():
+
     username = request.form['username']
     password = request.form['password']
 
-    conn = sqlite3.connect('database.db')
-    c = conn.cursor()
+    result = supabase.table("users").select("*").eq(
+        "username",
+        username
+    ).execute()
 
-    c.execute(
-        "SELECT password FROM users WHERE username=?",
-        (username,)
-    )
+    # ❌ User not found
+    if not result.data:
 
-    result = c.fetchone()
-    conn.close()
+        flash("User does not exist ❌")
 
-    if result and check_password_hash(result[0], password):
-        session['user'] = username
-        return redirect('/dashboard')
+        return redirect('/')
 
-    return render_template(
-        "login.html",
-        error="❌ Invalid credentials"
-    )
+    user = result.data[0]
 
-# 📝 Signup
+    # ❌ Wrong password
+    if not check_password_hash(user['password'], password):
+
+        flash("Wrong password ❌")
+
+        return redirect('/')
+
+    # ✅ Login success
+    session['user'] = username
+
+    session['login_success'] = "Logged in successfully ✅"
+
+    return redirect('/dashboard')
+# =========================
+# SIGNUP
+# =========================
+
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
 
-    if request.method == 'GET':
-        return render_template('signup.html')
+    if request.method == 'POST':
 
-    username = request.form.get('username')
-    password = request.form.get('password')
+        username = request.form['username']
+        password = request.form['password']
 
-    if not username or not password:
-        return "Username and Password required ❌"
+        hashed_password = generate_password_hash(password)
 
-    hashed_password = generate_password_hash(password)
+        # 🔍 Check if user already exists
+        existing_user = supabase.table("users").select("*").eq(
+            "username",
+            username
+        ).execute()
 
-    conn = sqlite3.connect('database.db')
-    c = conn.cursor()
+        # ❌ User already exists
+        if existing_user.data:
 
-    c.execute(
-        "SELECT * FROM users WHERE username=?",
-        (username,)
-    )
+            flash("User already exists ❌")
 
-    existing_user = c.fetchone()
+            return redirect('/signup')
 
-    if existing_user:
-        conn.close()
-        return "User already exists ❌"
+        # ✅ Create new user
+        supabase.table("users").insert({
+            "username": username,
+            "password": hashed_password
+        }).execute()
 
-    c.execute(
-        "INSERT INTO users (username, password) VALUES (?, ?)",
-        (username, hashed_password)
-    )
+        flash("Account created successfully ✅")
 
-    conn.commit()
-    conn.close()
+        return redirect('/')
 
-    return redirect('/')
+    return render_template('signup.html')
 
-# 📊 Dashboard
+# =========================
+# DASHBOARD
+# =========================
+
 @app.route('/dashboard')
 def dashboard():
 
     if 'user' not in session:
         return redirect('/')
 
-    # ☁️ Files from Supabase Storage
+    # =========================
+    # LOGIN SUCCESS MESSAGE
+    # =========================
+
+    login_message = session.pop(
+        'login_success',
+        None
+    )
+
+    # =========================
+    # FETCH FILES
+    # =========================
     files = []
 
     response = supabase.storage.from_("files").list(
-        session['user']
+    path=session['user']
     )
 
     for item in response:
 
-        name = item['name']
+        if item.get("id"):
+
+         name = item['name']
 
         if (
             not name.endswith(".sig")
             and not name.startswith("temp_")
         ):
+
             files.append(name)
 
-    # 📌 Latest uploaded files first
+    files = list(dict.fromkeys(files))
+
     files.reverse()
 
-    # 📝 Database Logs
-    conn = sqlite3.connect('database.db')
-    c = conn.cursor()
+    # =========================
+    # FETCH LOGS
+    # =========================
 
-    c.execute('''
-    SELECT action, filename, time
-    FROM logs
-    WHERE username=?
-    ORDER BY id DESC
-    ''', (session['user'],))
+    logs_response = supabase.table("logs").select("*").eq(
+        "username",
+        session['user']
+    ).execute()
 
-    logs = c.fetchall()
+    logs = logs_response.data[::-1]
 
-    # 🔗 Shared Links
-    c.execute('''
-    SELECT token, filename, expiry_time
-    FROM shared_links
-    WHERE username=?
-    ORDER BY id DESC
-    ''', (session['user'],))
+    # =========================
+    # FETCH SHARED LINKS
+    # =========================
 
-    shared_links = c.fetchall()
+    shared_response = supabase.table("shared_links").select("*").eq(
+        "username",
+        session['user']
+    ).execute()
 
-    conn.close()
+    shared_links = shared_response.data[::-1]
 
     return render_template(
         'dashboard.html',
         user=session['user'],
         files=files,
         logs=logs,
-        shared_links=shared_links
+        shared_links=shared_links,
+        login_message=login_message
     )
 
-# 🚪 Logout
+# =========================
+# LOGOUT
+# =========================
+
 @app.route('/logout')
 def logout():
     session.pop('user', None)
     return redirect('/')
 
-# 📤 Upload File
+# =========================
+# UPLOAD FILE
+# =========================
+
 @app.route('/upload', methods=['POST'])
 def upload():
 
@@ -242,19 +250,18 @@ def upload():
 
     encrypted = cipher.encrypt(file.read())
 
-    user_folder = os.path.join(
-        UPLOAD_FOLDER,
-        session['user']
-    )
-
-    os.makedirs(user_folder, exist_ok=True)
-
-    file_path = os.path.join(user_folder, filename)
+    # =========================
+    # UPLOAD TO SUPABASE STORAGE
+    # =========================
 
     supabase.storage.from_("files").upload(
-    f"{session['user']}/{filename}",
-    encrypted
+        f"{session['user']}/{filename}",
+        encrypted
     )
+
+    # =========================
+    # RSA SIGNATURE
+    # =========================
 
     signature = private_key.sign(
         encrypted,
@@ -265,31 +272,39 @@ def upload():
         hashes.SHA256()
     )
 
-    with open(file_path + ".sig", "wb") as f:
-        f.write(signature)
+    # SAVE SIGNATURE TEMPORARILY
+    temp_sig_folder = "temp_signatures"
+    os.makedirs(temp_sig_folder, exist_ok=True)
 
-    conn = sqlite3.connect('database.db')
-    c = conn.cursor()
-
-    ist = pytz.timezone('Asia/Kolkata')
-    current_time = datetime.now(ist)
-
-    c.execute(
-        "INSERT INTO logs (username, action, filename, time) VALUES (?, ?, ?, ?)",
-        (
-            session['user'],
-            "UPLOAD",
-            filename,
-            current_time.strftime("%Y-%m-%d %H:%M:%S")
-        )
+    sig_path = os.path.join(
+        temp_sig_folder,
+        filename + ".sig"
     )
 
-    conn.commit()
-    conn.close()
+    with open(sig_path, "wb") as f:
+        f.write(signature)
+
+    # =========================
+    # LOGS
+    # =========================
+
+    ist = pytz.timezone('Asia/Kolkata')
+
+    current_time = datetime.now(ist)
+
+    supabase.table("logs").insert({
+        "username": session['user'],
+        "action": "UPLOAD",
+        "filename": filename,
+        "time": current_time.strftime("%Y-%m-%d %H:%M:%S")
+    }).execute()
 
     return redirect('/dashboard')
 
-# 📥 Download File
+# =========================
+# DOWNLOAD FILE
+# =========================
+
 @app.route('/download/<filename>', methods=['POST'])
 def download(filename):
 
@@ -301,76 +316,123 @@ def download(filename):
     key = generate_key(password)
     cipher = Fernet(key)
 
-    user_folder = os.path.join(
-        UPLOAD_FOLDER,
-        session['user']
-    )
+    # =========================
+    # DOWNLOAD ENCRYPTED FILE
+    # =========================
 
-    file_path = os.path.join(user_folder, filename)
+    try:
+        encrypted = supabase.storage.from_("files").download(
+            f"{session['user']}/{filename}"
+        )
 
-    if not os.path.exists(file_path):
+    except:
         return "❌ File not found"
 
-    response = supabase.storage.from_("files").download(
-    f"{session['user']}/{filename}"
-    )
-
-    encrypted = response
-
-    try:
-        with open(file_path + ".sig", "rb") as f:
-            signature = f.read()
-    except:
-        return "❌ Signature missing"
-
-    try:
-        public_key.verify(
-            signature,
-            encrypted,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
-            hashes.SHA256()
-        )
-    except:
-        return "❌ File integrity compromised!"
+    # =========================
+    # DECRYPT FILE
+    # =========================
 
     try:
         decrypted = cipher.decrypt(encrypted)
+
     except:
         return "❌ Wrong password!"
 
+    # =========================
+    # TEMP DOWNLOAD FILE
+    # =========================
+
+    temp_folder = "temp_downloads"
+
+    os.makedirs(temp_folder, exist_ok=True)
+
     temp_path = os.path.join(
-        user_folder,
+        temp_folder,
         "temp_" + filename
     )
 
     with open(temp_path, "wb") as f:
         f.write(decrypted)
 
-    conn = sqlite3.connect('database.db')
-    c = conn.cursor()
+    # =========================
+    # LOGS
+    # =========================
 
     ist = pytz.timezone('Asia/Kolkata')
+
     current_time = datetime.now(ist)
 
-    c.execute(
-        "INSERT INTO logs (username, action, filename, time) VALUES (?, ?, ?, ?)",
-        (
-            session['user'],
-            "DOWNLOAD",
-            filename,
-            current_time.strftime("%Y-%m-%d %H:%M:%S")
-        )
-    )
-
-    conn.commit()
-    conn.close()
+    supabase.table("logs").insert({
+        "username": session['user'],
+        "action": "DOWNLOAD",
+        "filename": filename,
+        "time": current_time.strftime("%Y-%m-%d %H:%M:%S")
+    }).execute()
 
     return send_file(temp_path, as_attachment=True)
+# =========================
+# DELETE FILE
+# =========================
+@app.route('/delete/<filename>', methods=['POST'])
+def delete_file(filename):
 
-# 🔗 Share File
+    if 'user' not in session:
+        return redirect('/')
+
+    try:
+
+        file_path = f"{session['user']}/{filename}"
+
+        # DELETE FROM SUPABASE STORAGE
+
+        delete_response = supabase.storage.from_("files").remove([
+            file_path
+        ])
+
+        print("DELETE RESPONSE:", delete_response)
+
+        # DELETE SHARED LINKS
+
+        supabase.table("shared_links").delete().eq(
+            "filename",
+            filename
+        ).eq(
+            "username",
+            session['user']
+        ).execute()
+
+        # DELETE OLD LOGS OF THIS FILE
+
+        supabase.table("logs").delete().eq(
+            "filename",
+            filename
+        ).eq(
+            "username",
+            session['user']
+        ).execute()
+
+        # ADD DELETE LOG
+
+        ist = pytz.timezone('Asia/Kolkata')
+
+        current_time = datetime.now(ist)
+
+        supabase.table("logs").insert({
+            "username": session['user'],
+            "action": "DELETE",
+            "filename": filename,
+            "time": current_time.strftime("%Y-%m-%d %H:%M:%S")
+        }).execute()
+
+    except Exception as e:
+
+        return f"Delete failed ❌ {e}"
+
+    return redirect('/dashboard')
+# =========================
+# SHARE FILE
+# =========================
+
 @app.route('/share', methods=['POST'])
 def share():
 
@@ -392,50 +454,53 @@ def share():
 
     password_hash = generate_password_hash(share_password)
 
-    conn = sqlite3.connect('database.db')
-    c = conn.cursor()
+    supabase.table("shared_links").insert({
+        "token": token,
+        "filename": filename,
+        "username": session['user'],
+        "password_hash": password_hash,
+        "expiry_time": expiry_time.isoformat()
+    }).execute()
 
-    c.execute('''
-    INSERT INTO shared_links
-    (token, filename, username, password_hash, expiry_time)
-    VALUES (?, ?, ?, ?, ?)
-    ''', (
-        token,
-        filename,
-        session['user'],
-        password_hash,
-        expiry_time.isoformat()
-    ))
+    # =========================
+    # LOGS
+    # =========================
 
-    conn.commit()
-    conn.close()
+    current_time = datetime.now(ist)
+
+    supabase.table("logs").insert({
+        "username": session['user'],
+        "action": "SHARE LINK CREATED",
+        "filename": filename,
+        "time": current_time.strftime("%Y-%m-%d %H:%M:%S")
+    }).execute()
 
     return redirect('/dashboard')
 
-# 🌐 Shared Access
+# =========================
+# SHARED ACCESS
+# =========================
+@app.route('/shared/')
+def shared_home():
+    return "Invalid shared link ❌"
+
 @app.route('/shared/<token>', methods=['GET', 'POST'])
 def shared(token):
 
-    conn = sqlite3.connect('database.db')
-    c = conn.cursor()
+    result = supabase.table("shared_links").select("*").eq(
+        "token",
+        token
+    ).execute()
 
-    c.execute(
-        """
-        SELECT filename, username, password_hash, expiry_time
-        FROM shared_links
-        WHERE token=?
-        """,
-        (token,)
-    )
-
-    row = c.fetchone()
-
-    conn.close()
-
-    if not row:
+    if not result.data:
         return "Invalid link ❌"
 
-    filename, username, share_pwd_hash, expiry_time = row
+    row = result.data[0]
+
+    filename = row['filename']
+    username = row['username']
+    share_pwd_hash = row['password_hash']
+    expiry_time = row['expiry_time']
 
     expiry_time = datetime.fromisoformat(expiry_time)
 
@@ -449,14 +514,20 @@ def shared(token):
         share_pwd = request.form.get('share_password')
         file_pwd = request.form.get('file_password')
 
-        # 🔐 Check share password
+        # =========================
+        # CHECK SHARE PASSWORD
+        # =========================
+
         if share_pwd_hash and not check_password_hash(
             share_pwd_hash,
             share_pwd
         ):
             return "Wrong share password ❌"
 
-        # ☁️ Download encrypted file from Supabase
+        # =========================
+        # DOWNLOAD FILE FROM SUPABASE
+        # =========================
+
         try:
             encrypted = supabase.storage.from_("files").download(
                 f"{username}/{filename}"
@@ -465,18 +536,23 @@ def shared(token):
         except:
             return "File not found ❌"
 
-        # 🔑 Generate decryption key
+        # =========================
+        # DECRYPT FILE
+        # =========================
+
         key = generate_key(file_pwd)
         cipher = Fernet(key)
 
-        # 🔓 Decrypt file
         try:
             decrypted = cipher.decrypt(encrypted)
 
         except:
             return "Wrong file password ❌"
 
-        # 📂 Temporary file path
+        # =========================
+        # TEMP DOWNLOAD FILE
+        # =========================
+
         temp_folder = "temp_downloads"
 
         os.makedirs(temp_folder, exist_ok=True)
@@ -486,11 +562,9 @@ def shared(token):
             "temp_" + filename
         )
 
-        # 💾 Save decrypted temporary file
         with open(temp_path, "wb") as f:
             f.write(decrypted)
 
-        # 📥 Send file
         return send_file(
             temp_path,
             as_attachment=True
@@ -501,7 +575,10 @@ def shared(token):
         token=token
     )
 
-# ▶ Run App
+# =========================
+# RUN APP
+# =========================
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)

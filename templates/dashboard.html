@@ -1,8 +1,18 @@
 <!DOCTYPE html>
 <html>
+
 <head>
+
     <title>Secure Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <!-- FONT AWESOME ICONS -->
+
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
 </head>
 
 <body>
@@ -10,90 +20,278 @@
 <div class="container">
 
     <h1>🔐 Secure Dashboard</h1>
-    <h3>Welcome {{ user }} 👋</h3>
 
+    <h3>
+        Welcome {{ user }} 👋
+    </h3>
+
+    <!-- LOGIN MESSAGE -->
+
+    {% if login_message %}
+
+        <div class="flash-message">
+            {{ login_message }}
+        </div>
+
+    {% endif %}
+
+    <!-- ========================= -->
     <!-- Upload Section -->
-    <div class="card">
-        <h2>Upload File</h2>
+    <!-- ========================= -->
 
-        <form action="/upload" method="POST" enctype="multipart/form-data">
-            <input type="file" name="file" required>
-            <input type="password" name="password" placeholder="Enter encryption password" required>
-            <button type="submit">Upload File</button>
+    <div class="card">
+
+        <h2>
+            <i class="fa-solid fa-upload"></i>
+            Upload File
+        </h2>
+
+        <form action="/upload"
+              method="POST"
+              enctype="multipart/form-data"
+              class="upload-form">
+
+            <input type="file"
+                   name="file"
+                   required>
+
+            <input type="password"
+                   name="password"
+                   placeholder="Encryption password"
+                   required>
+
+            <button type="submit">
+
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+
+            </button>
+
         </form>
+
     </div>
 
-    <!-- File List -->
+    <!-- ========================= -->
+    <!-- Files Section -->
+    <!-- ========================= -->
+
     <div class="card">
-        <h2>📁 Your Files</h2>
+
+        <h2>
+            <i class="fa-solid fa-folder"></i>
+            Your Files
+        </h2>
 
         {% if files %}
+
             {% for file in files %}
-                <div class="file-box">
 
-                    <h4>{{ file }}</h4>
+                <div class="file-row">
 
-                    <!-- Download -->
-                    <form action="/download/{{ file }}" method="POST">
-                        <input type="password" name="password" placeholder="Enter password" required>
-                        <button type="submit">Download</button>
+                    <!-- FILE NAME -->
+
+                    <div class="file-name">
+
+                        <i class="fa-solid fa-file"></i>
+
+                        {{ file }}
+
+                    </div>
+
+                    <!-- DOWNLOAD -->
+
+                    <form action="/download/{{ file }}"
+                          method="POST"
+                          class="inline-form">
+
+                        <input type="password"
+                               name="password"
+                               placeholder="File password"
+                               required>
+
+                        <button type="submit"
+                                class="icon-btn download-btn">
+
+                            <i class="fa-solid fa-download"></i>
+
+                        </button>
+
                     </form>
 
-                    <!-- Share -->
-                    <form action="/share" method="POST">
-                        <input type="hidden" name="filename" value="{{ file }}">
+                    <!-- SHARE -->
 
-                        <input type="password" name="share_password" placeholder="Share password" required>
+                    <form action="/share"
+                          method="POST"
+                          class="inline-form">
+
+                        <input type="hidden"
+                               name="filename"
+                               value="{{ file }}">
+
+                        <input type="password"
+                               name="share_password"
+                               placeholder="Share password"
+                               required>
 
                         <select name="expiry">
-                            <option value="24h">24 Hours</option>
-                            <option value="7d">7 Days</option>
+
+                            <option value="24h">
+                                24H
+                            </option>
+
+                            <option value="7d">
+                                7D
+                            </option>
+
                         </select>
 
-                        <button type="submit">Share</button>
+                        <button type="submit"
+                                class="icon-btn share-btn">
+
+                            <i class="fa-solid fa-share-nodes"></i>
+
+                        </button>
+
+                    </form>
+
+                    <!-- DELETE -->
+
+                    <form action="/delete/{{ file }}"
+                          method="POST">
+
+                        <button type="submit"
+                                class="icon-btn delete-btn">
+
+                            <i class="fa-solid fa-trash"></i>
+
+                        </button>
+
                     </form>
 
                 </div>
+
             {% endfor %}
+
         {% else %}
+
             <p>No files uploaded yet</p>
+
         {% endif %}
+
     </div>
+
+    <!-- ========================= -->
+    <!-- Shared Links -->
+    <!-- ========================= -->
+
     <div class="card">
-    <h2>🔗 Shared Links</h2>
 
-    {% if shared_links %}
-        {% for link in shared_links %}
-            <div class="file-box">
-                <p><strong>{{ link[1] }}</strong></p>
+        <h2>
+            <i class="fa-solid fa-link"></i>
+            Shared Links
+        </h2>
 
-                <a href="{{ url_for('shared', token=link[0]) }}" target="_blank">
-                    Open Link
-                </a>
+        {% if shared_links %}
 
-                <p>Expires: {{ link[2] }}</p>
-            </div>
-        {% endfor %}
-    {% else %}
-        <p>No shared links yet</p>
-    {% endif %}
+            {% for link in shared_links %}
+
+                <div class="shared-box">
+
+                    <div>
+
+                        <h4>
+
+                            <i class="fa-solid fa-file"></i>
+
+                            {{ link.filename }}
+
+                        </h4>
+
+                        <p>
+                            Expires:
+                            {{ link.expiry_time }}
+                        </p>
+
+                    </div>
+
+                    <a href="{{ url_for('shared', token=link.token) }}"
+                       target="_blank"
+                       class="open-link">
+
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i>
+
+                    </a>
+
+                </div>
+
+            {% endfor %}
+
+        {% else %}
+
+            <p>No shared links yet</p>
+
+        {% endif %}
+
     </div>
 
-    <!-- Logs -->
+    <!-- ========================= -->
+    <!-- Activity Logs -->
+    <!-- ========================= -->
+
     <div class="card">
-        <h2>📊 Activity Logs</h2>
 
-        {% for log in logs %}
-            <p>{{ log[0] }} → {{ log[1] }} ({{ log[2] }})</p>
-        {% endfor %}
+        <h2>
+            <i class="fa-solid fa-chart-column"></i>
+            Activity Logs
+        </h2>
+
+        {% if logs %}
+
+            {% for log in logs %}
+
+                <div class="log-box">
+
+                    <strong>
+                        {{ log.action }}
+                    </strong>
+
+                    →
+
+                    {{ log.filename }}
+
+                    <span>
+                        {{ log.time }}
+                    </span>
+
+                </div>
+
+            {% endfor %}
+
+        {% else %}
+
+            <p>No activity yet</p>
+
+        {% endif %}
+
     </div>
 
+    <!-- ========================= -->
     <!-- Logout -->
+    <!-- ========================= -->
+
     <form action="/logout">
-        <button class="logout">Logout</button>
+
+        <button class="logout">
+
+            <i class="fa-solid fa-right-from-bracket"></i>
+
+            Logout
+
+        </button>
+
     </form>
 
 </div>
 
 </body>
+
 </html>
