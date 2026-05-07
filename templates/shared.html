@@ -1,23 +1,86 @@
 <!DOCTYPE html>
 <html>
+
 <head>
+
     <title>Secure Download</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <!-- FONT AWESOME -->
+
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
 </head>
+
 <body>
 
-<div class="share-page">
-    <div class="share-card">
-        <h2>🔐 Secure Download</h2>
+<div class="shared-page">
 
-        <form method="POST">
-            <input type="password" name="share_password" placeholder="Share Password">
-            <input type="password" name="file_password" placeholder="File Password" required>
+    <div class="shared-card">
 
-            <button type="submit">Download File</button>
+        <h1>
+
+            <i class="fa-solid fa-lock"></i>
+
+            Secure Download
+
+        </h1>
+
+        <p class="shared-text">
+
+            Enter passwords to securely download the file
+
+        </p>
+
+        <form method="POST"
+              class="shared-form">
+
+            <!-- SHARE PASSWORD -->
+
+            <div class="input-box">
+
+                <i class="fa-solid fa-key"></i>
+
+                <input type="password"
+                       name="share_password"
+                       placeholder="Share password"
+                       required>
+
+            </div>
+
+            <!-- FILE PASSWORD -->
+
+            <div class="input-box">
+
+                <i class="fa-solid fa-file-lock"></i>
+
+                <input type="password"
+                       name="file_password"
+                       placeholder="File password"
+                       required>
+
+            </div>
+
+            <!-- DOWNLOAD BUTTON -->
+
+            <button type="submit"
+                    class="download-main-btn">
+
+                <i class="fa-solid fa-download"></i>
+
+                Download File
+
+            </button>
+
         </form>
+
     </div>
+
 </div>
 
 </body>
+
 </html>
