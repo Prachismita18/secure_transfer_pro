@@ -69,7 +69,9 @@ def home():
 # =========================
 # LOGIN
 # =========================
-
+@app.route('/login')
+def login_page():
+    return redirect('/')
 @app.route('/login', methods=['POST'])
 def login():
 
