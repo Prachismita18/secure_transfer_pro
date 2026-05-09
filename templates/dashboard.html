@@ -8,8 +8,6 @@
     <link rel="stylesheet"
           href="{{ url_for('static', filename='style.css') }}">
 
-    <!-- FONT AWESOME ICONS -->
-
     <link rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
@@ -25,8 +23,6 @@
         Welcome {{ user }} 👋
     </h3>
 
-    <!-- LOGIN MESSAGE -->
-
     {% if login_message %}
 
         <div class="flash-message">
@@ -36,49 +32,53 @@
     {% endif %}
 
     <!-- ========================= -->
-    <!-- Upload Section -->
+    <!-- E2EE UPLOAD -->
     <!-- ========================= -->
 
     <div class="card">
 
         <h2>
+
             <i class="fa-solid fa-upload"></i>
-            Upload File
+
+            End-to-End Encrypted Upload
+
         </h2>
 
-        <form action="/upload"
-              method="POST"
-              enctype="multipart/form-data"
-              class="upload-form">
+        <div class="upload-form">
 
             <input type="file"
-                   name="file"
+                   id="fileInput"
                    required>
 
             <input type="password"
-                   name="password"
+                   id="password"
                    placeholder="Encryption password"
                    required>
 
-            <button type="submit">
+            <button type="button"
+                    onclick="encryptAndUpload()">
 
                 <i class="fa-solid fa-cloud-arrow-up"></i>
 
             </button>
 
-        </form>
+        </div>
 
     </div>
 
     <!-- ========================= -->
-    <!-- Files Section -->
+    <!-- FILES -->
     <!-- ========================= -->
 
     <div class="card">
 
         <h2>
+
             <i class="fa-solid fa-folder"></i>
+
             Your Files
+
         </h2>
 
         {% if files %}
@@ -93,35 +93,64 @@
 
                         <i class="fa-solid fa-file"></i>
 
-                        {{ file }}
+                        <div>
+
+                            <div>
+
+                                {{ file }}
+
+                            </div>
+
+                            <small>
+
+                                Uploaded:
+
+                                {% for t in file_times %}
+
+                                    {% if t.filename == file %}
+
+                                        {{ t.uploaded_at[:10] }}
+
+                                        |
+
+                                        {{ t.uploaded_at[11:16] }}
+
+                                    {% endif %}
+
+                                {% endfor %}
+
+                            </small>
+
+                        </div>
 
                     </div>
 
                     <!-- DOWNLOAD -->
 
-                    <form action="/download/{{ file }}"
-                          method="POST"
-                          class="inline-form">
+                    <div class="inline-form">
 
                         <input type="password"
-                               name="password"
+                               id="password-{{ loop.index }}"
                                placeholder="File password"
                                required>
 
-                        <button type="submit"
-                                class="icon-btn download-btn">
+                        <button type="button"
+                                class="icon-btn download-btn"
+
+                                onclick="downloadAndDecrypt(
+                                    '{{ file }}',
+                                    'password-{{ loop.index }}'
+                                )">
 
                             <i class="fa-solid fa-download"></i>
 
                         </button>
 
-                    </form>
+                    </div>
 
                     <!-- SHARE -->
 
-                    <form action="/share"
-                          method="POST"
-                          class="inline-form">
+                    <form class="inline-form share-form">
 
                         <input type="hidden"
                                name="filename"
@@ -134,12 +163,16 @@
 
                         <select name="expiry">
 
+                            <option value="one_time">
+                                One Time
+                            </option>
+
                             <option value="24h">
-                                24H
+                                24 Hours
                             </option>
 
                             <option value="7d">
-                                7D
+                                7 Days
                             </option>
 
                         </select>
@@ -180,14 +213,17 @@
     </div>
 
     <!-- ========================= -->
-    <!-- Shared Links -->
+    <!-- SHARED LINKS -->
     <!-- ========================= -->
 
     <div class="card">
 
         <h2>
+
             <i class="fa-solid fa-link"></i>
+
             Shared Links
+
         </h2>
 
         {% if shared_links %}
@@ -207,8 +243,33 @@
                         </h4>
 
                         <p>
-                            Expires:
-                            {{ link.expiry_time }}
+
+                            {% if link.one_time %}
+
+                                One Time Access
+
+                                <br><br>
+
+                                Created:
+
+                                {{ link.created_at[:10] }}
+
+                                |
+
+                                {{ link.created_at[11:16] }}
+
+                            {% else %}
+
+                                Expires:
+
+                                {{ link.expiry_time[:10] }}
+
+                                |
+
+                                {{ link.expiry_time[11:16] }}
+
+                            {% endif %}
+
                         </p>
 
                     </div>
@@ -234,14 +295,17 @@
     </div>
 
     <!-- ========================= -->
-    <!-- Activity Logs -->
+    <!-- LOGS -->
     <!-- ========================= -->
 
     <div class="card">
 
         <h2>
+
             <i class="fa-solid fa-chart-column"></i>
+
             Activity Logs
+
         </h2>
 
         {% if logs %}
@@ -251,7 +315,9 @@
                 <div class="log-box">
 
                     <strong>
+
                         {{ log.action }}
+
                     </strong>
 
                     →
@@ -259,7 +325,9 @@
                     {{ log.filename }}
 
                     <span>
+
                         {{ log.time }}
+
                     </span>
 
                 </div>
@@ -275,7 +343,7 @@
     </div>
 
     <!-- ========================= -->
-    <!-- Logout -->
+    <!-- LOGOUT -->
     <!-- ========================= -->
 
     <form action="/logout">
@@ -291,6 +359,220 @@
     </form>
 
 </div>
+
+<!-- ================================= -->
+<!-- E2EE JAVASCRIPT -->
+<!-- ================================= -->
+
+<script>
+
+let globalIV = null;
+
+// =====================================
+// ENCRYPT + UPLOAD
+// =====================================
+
+async function encryptAndUpload() {
+
+    const fileInput =
+        document.getElementById('fileInput');
+
+    const password =
+        document.getElementById('password').value;
+
+    const file =
+        fileInput.files[0];
+
+    if (!file) {
+
+        alert("Select a file");
+
+        return;
+    }
+
+    const fileBuffer =
+        await file.arrayBuffer();
+
+    const keyMaterial =
+        await window.crypto.subtle.importKey(
+
+            "raw",
+
+            new TextEncoder().encode(password),
+
+            { name: "PBKDF2" },
+
+            false,
+
+            ["deriveKey"]
+
+        );
+
+    const aesKey =
+        await window.crypto.subtle.deriveKey(
+
+            {
+                name: "PBKDF2",
+                salt: new Uint8Array(16),
+                iterations: 100000,
+                hash: "SHA-256"
+            },
+
+            keyMaterial,
+
+            {
+                name: "AES-GCM",
+                length: 256
+            },
+
+            true,
+
+            ["encrypt", "decrypt"]
+
+        );
+
+    const iv =
+        window.crypto.getRandomValues(
+            new Uint8Array(12)
+        );
+
+    globalIV = Array.from(iv);
+
+    const encrypted =
+        await window.crypto.subtle.encrypt(
+
+            {
+                name: "AES-GCM",
+                iv: iv
+            },
+
+            aesKey,
+
+            fileBuffer
+
+        );
+
+    const formData = new FormData();
+
+    formData.append(
+        "file",
+        new Blob([encrypted]),
+        file.name + ".enc"
+    );
+
+    formData.append(
+        "iv",
+        JSON.stringify(globalIV)
+    );
+
+    fetch("/upload", {
+
+        method: "POST",
+
+        body: formData
+
+    }).then(async (response) => {
+
+        const data =
+            await response.json();
+
+        const popup =
+            document.createElement("div");
+
+        popup.className =
+            "success-popup";
+
+        popup.innerHTML =
+            data.message;
+
+        if (!data.success) {
+
+            popup.style.background =
+                "#ff4b5c";
+
+        }
+
+        document.body.appendChild(
+            popup
+        );
+
+        setTimeout(() => {
+
+            popup.remove();
+
+            if (data.success) {
+
+                window.location.reload();
+
+            }
+
+        }, 5000);
+
+    });
+
+}
+
+</script>
+
+<script>
+
+document.querySelectorAll(
+    ".share-form"
+).forEach(form => {
+
+    form.addEventListener(
+        "submit",
+
+        async function(e) {
+
+            e.preventDefault();
+
+            const formData =
+                new FormData(form);
+
+            const response =
+                await fetch("/share", {
+
+                    method: "POST",
+
+                    body: formData
+
+                });
+
+            const data =
+                await response.json();
+
+            const popup =
+                document.createElement("div");
+
+            popup.className =
+                "success-popup";
+
+            popup.innerHTML =
+                data.message;
+
+            document.body.appendChild(
+                popup
+            );
+
+            setTimeout(() => {
+
+                popup.remove();
+
+            }, 3000);
+
+            setTimeout(() => {
+
+                window.location.reload();
+
+            }, 3500);
+
+        }
+    );
+
+});
+
+</script>
 
 </body>
 

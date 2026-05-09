@@ -3,76 +3,37 @@
 
 <head>
 
-    <title>Secure Download</title>
+    <title>Secure Shared File</title>
 
     <link rel="stylesheet"
           href="{{ url_for('static', filename='style.css') }}">
-
-    <!-- FONT AWESOME -->
-
-    <link rel="stylesheet"
-          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
 </head>
 
 <body>
 
-<div class="shared-page">
+<div class="login-page">
 
-    <div class="shared-card">
+    <div class="login-card">
 
-        <h1>
+        <h2>
+            🔗 Secure Shared File
+        </h2>
 
-            <i class="fa-solid fa-lock"></i>
+        <form id="sharedForm">
 
-            Secure Download
+            <input type="password"
+                   id="share_password"
+                   placeholder="Share Password"
+                   required>
 
-        </h1>
+            <input type="password"
+                   id="file_password"
+                   placeholder="File Password"
+                   required>
 
-        <p class="shared-text">
-
-            Enter passwords to securely download the file
-
-        </p>
-
-        <form method="POST"
-              class="shared-form">
-
-            <!-- SHARE PASSWORD -->
-
-            <div class="input-box">
-
-                <i class="fa-solid fa-key"></i>
-
-                <input type="password"
-                       name="share_password"
-                       placeholder="Share password"
-                       required>
-
-            </div>
-
-            <!-- FILE PASSWORD -->
-
-            <div class="input-box">
-
-                <i class="fa-solid fa-file-lock"></i>
-
-                <input type="password"
-                       name="file_password"
-                       placeholder="File password"
-                       required>
-
-            </div>
-
-            <!-- DOWNLOAD BUTTON -->
-
-            <button type="submit"
-                    class="download-main-btn">
-
-                <i class="fa-solid fa-download"></i>
-
+            <button type="submit">
                 Download File
-
             </button>
 
         </form>
@@ -80,6 +41,191 @@
     </div>
 
 </div>
+
+<script>
+
+document.getElementById(
+    "sharedForm"
+).addEventListener(
+
+    "submit",
+
+    async function(e) {
+
+        e.preventDefault();
+
+        const share_password =
+            document.getElementById(
+                "share_password"
+            ).value;
+
+        const file_password =
+            document.getElementById(
+                "file_password"
+            ).value;
+
+        // =========================
+        // SEND PASSWORDS
+        // =========================
+
+        const response = await fetch(
+            window.location.pathname,
+
+            {
+
+                method: "POST",
+
+                headers: {
+
+                    "Content-Type":
+                    "application/x-www-form-urlencoded"
+
+                },
+
+                body:
+                    `share_password=${encodeURIComponent(share_password)}&file_password=${encodeURIComponent(file_password)}`
+
+            }
+        );
+
+        const data =
+            await response.json();
+
+        // =========================
+        // BASE64 → BUFFER
+        // =========================
+
+        const binary =
+            atob(data.file);
+
+        const bytes =
+            new Uint8Array(binary.length);
+
+        for (let i = 0; i < binary.length; i++) {
+
+            bytes[i] =
+                binary.charCodeAt(i);
+
+        }
+
+        const encryptedBuffer =
+            bytes.buffer;
+
+        // =========================
+        // IV
+        // =========================
+
+        const iv =
+            new Uint8Array(
+                JSON.parse(data.iv)
+            );
+
+        // =========================
+        // CREATE AES KEY
+        // =========================
+
+        const keyMaterial =
+            await window.crypto.subtle.importKey(
+
+                "raw",
+
+                new TextEncoder().encode(
+                    file_password
+                ),
+
+                { name: "PBKDF2" },
+
+                false,
+
+                ["deriveKey"]
+
+            );
+
+        const aesKey =
+            await window.crypto.subtle.deriveKey(
+
+                {
+                    name: "PBKDF2",
+                    salt: new Uint8Array(16),
+                    iterations: 100000,
+                    hash: "SHA-256"
+                },
+
+                keyMaterial,
+
+                {
+                    name: "AES-GCM",
+                    length: 256
+                },
+
+                true,
+
+                ["decrypt"]
+
+            );
+
+        try {
+
+            // =========================
+            // DECRYPT
+            // =========================
+
+            const decrypted =
+                await window.crypto.subtle.decrypt(
+
+                    {
+                        name: "AES-GCM",
+                        iv: iv
+                    },
+
+                    aesKey,
+
+                    encryptedBuffer
+
+                );
+
+            // =========================
+            // DOWNLOAD ORIGINAL FILE
+            // =========================
+
+            const blob =
+                new Blob([decrypted]);
+
+            const url =
+                window.URL.createObjectURL(blob);
+
+            const a =
+                document.createElement("a");
+
+            a.href = url;
+
+            a.download =
+                data.filename.replace(
+                    ".enc",
+                    ""
+                );
+
+            document.body.appendChild(a);
+
+            a.click();
+
+            a.remove();
+
+        }
+
+        catch {
+
+            alert(
+                "Wrong file password ❌"
+            );
+
+        }
+
+    }
+
+);
+
+</script>
 
 </body>
 

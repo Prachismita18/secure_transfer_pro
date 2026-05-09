@@ -328,3 +328,66 @@ h1,h2,h3{
 .download-main-btn:hover{
     transform:scale(1.03);
 }
+.upload-form button{
+    background:linear-gradient(90deg,#00c6ff,#0072ff);
+}
+
+.upload-form button:hover{
+    transform:scale(1.08);
+}
+
+.upload-form input{
+    background:#f8f9ff;
+}
+.success-popup{
+
+    position:fixed;
+
+    top:30px;
+    right:30px;
+
+    background:linear-gradient(
+        135deg,
+        #00c853,
+        #00e676
+    );
+
+    color:white;
+
+    padding:18px 24px;
+
+    border-radius:15px;
+
+    font-size:16px;
+    font-weight:bold;
+
+    box-shadow:0 8px 25px rgba(
+        0,
+        0,
+        0,
+        0.2
+    );
+
+    z-index:9999;
+
+    animation:slideIn 0.4s ease;
+
+}
+
+@keyframes slideIn{
+
+    from{
+
+        transform:translateX(100px);
+        opacity:0;
+
+    }
+
+    to{
+
+        transform:translateX(0);
+        opacity:1;
+
+    }
+
+}

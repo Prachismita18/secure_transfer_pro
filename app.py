@@ -1,4 +1,6 @@
 # app.py
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
 from supabase import create_client, Client
 import secrets
 import pytz
@@ -14,10 +16,11 @@ from flask import (
     redirect,
     session,
     send_file,
-    flash
+    flash,
+    jsonify
 )
 
-from cryptography.fernet import Fernet
+
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
@@ -119,43 +122,89 @@ def signup():
 
         hashed_password = generate_password_hash(password)
 
-        # 🔍 Check if user already exists
-        existing_user = supabase.table("users").select("*").eq(
+        # =========================
+        # CHECK EXISTING USER
+        # =========================
+
+        existing_user = supabase.table(
+            "users"
+        ).select("*").eq(
             "username",
             username
         ).execute()
 
-        # ❌ User already exists
         if existing_user.data:
 
             flash("User already exists ❌")
 
             return redirect('/signup')
 
-        # ✅ Create new user
+        # =========================
+        # GENERATE USER RSA KEYS
+        # =========================
+
+        private_key, public_key = (
+            generate_user_keys()
+        )
+
+        # =========================
+        # STORE USER
+        # =========================
+
         supabase.table("users").insert({
+
             "username": username,
-            "password": hashed_password
+            "password": hashed_password,
+            "public_key": public_key
+
         }).execute()
 
-        flash("Account created successfully ✅")
+        # =========================
+        # SAVE PRIVATE KEY
+        # =========================
 
-        return redirect('/')
+        os.makedirs(
+            "user_private_keys",
+            exist_ok=True
+        )
+
+        private_key_path = os.path.join(
+            "user_private_keys",
+            f"{username}_private.pem"
+        )
+
+        with open(private_key_path, "w") as f:
+            f.write(private_key)
+
+        flash(
+            "Account created. Save your private key 🔐"
+        )
+
+        # =========================
+        # DOWNLOAD PRIVATE KEY
+        # =========================
+
+        return send_file(
+            private_key_path,
+            as_attachment=True
+        )
 
     return render_template('signup.html')
-
 # =========================
 # DASHBOARD
 # =========================
-
 @app.route('/dashboard')
 def dashboard():
+
+    # =========================
+    # SESSION CHECK
+    # =========================
 
     if 'user' not in session:
         return redirect('/')
 
     # =========================
-    # LOGIN SUCCESS MESSAGE
+    # LOGIN MESSAGE
     # =========================
 
     login_message = session.pop(
@@ -166,36 +215,94 @@ def dashboard():
     # =========================
     # FETCH FILES
     # =========================
+
     files = []
 
-    response = supabase.storage.from_("files").list(
-    path=session['user']
+    response = supabase.storage.from_(
+        "files"
+    ).list(
+        path=session['user']
     )
 
     for item in response:
 
         if item.get("id"):
 
-         name = item['name']
+            name = item['name']
 
-        if (
-            not name.endswith(".sig")
-            and not name.startswith("temp_")
-        ):
+            # REMOVE TEMP + SIG FILES
 
-            files.append(name)
+            if (
+                not name.endswith(".sig")
+                and not name.startswith("temp_")
+            ):
 
-    files = list(dict.fromkeys(files))
+                files.append(name)
 
-    files.reverse()
+    # =========================
+    # REMOVE DUPLICATES
+    # =========================
+
+    files = list(
+        dict.fromkeys(files)
+    )
+
+    # =========================
+    # FETCH FILE TIMES
+    # =========================
+
+    file_times_response = supabase.table(
+        "uploaded_files"
+    ).select("*").eq(
+
+        "username",
+        session['user']
+
+    ).execute()
+
+    file_times = file_times_response.data
+
+    # =========================
+    # SORT FILES BY TIME
+    # =========================
+
+    files = sorted(
+
+        files,
+
+        key=lambda x:
+
+        next(
+
+            (
+
+                f['uploaded_at']
+
+                for f in file_times
+
+                if f['filename'] == x
+
+            ),
+
+            ""
+
+        ),
+
+        reverse=True
+
+    )
 
     # =========================
     # FETCH LOGS
     # =========================
 
-    logs_response = supabase.table("logs").select("*").eq(
+    logs_response = supabase.table(
+        "logs"
+    ).select("*").eq(
+
         "username",
         session['user']
+
     ).execute()
 
     logs = logs_response.data[::-1]
@@ -204,20 +311,46 @@ def dashboard():
     # FETCH SHARED LINKS
     # =========================
 
-    shared_response = supabase.table("shared_links").select("*").eq(
+    shared_response = supabase.table(
+        "shared_links"
+    ).select("*").eq(
+
         "username",
         session['user']
+
     ).execute()
 
-    shared_links = shared_response.data[::-1]
+    shared_links = sorted(
+
+        shared_response.data,
+
+        key=lambda x:
+        x['created_at'],
+
+        reverse=True
+
+    )
+
+    # =========================
+    # RENDER DASHBOARD
+    # =========================
 
     return render_template(
+
         'dashboard.html',
+
         user=session['user'],
+
         files=files,
+
+        file_times=file_times,
+
         logs=logs,
+
         shared_links=shared_links,
+
         login_message=login_message
+
     )
 
 # =========================
@@ -232,198 +365,456 @@ def logout():
 # =========================
 # UPLOAD FILE
 # =========================
-
 @app.route('/upload', methods=['POST'])
 def upload():
+
+    # =========================
+    # SESSION CHECK
+    # =========================
 
     if 'user' not in session:
         return redirect('/')
 
+    # =========================
+    # GET FILE + IV
+    # =========================
+
     file = request.files['file']
-    password = request.form['password']
+
+    iv = request.form['iv']
 
     if file.filename == "":
         return redirect('/dashboard')
 
     filename = file.filename
 
-    key = generate_key(password)
-    cipher = Fernet(key)
+    # =========================
+    # CHECK EXISTING FILE
+    # =========================
 
-    encrypted = cipher.encrypt(file.read())
+    existing_file = supabase.table(
+        "uploaded_files"
+    ).select("*").eq(
+
+        "username",
+        session['user']
+
+    ).eq(
+
+        "filename",
+        filename
+
+    ).execute()
+
+    if existing_file.data:
+
+        return jsonify({
+
+            "success": False,
+
+            "message":
+            "⚠ File already exists"
+
+        })
+
+    # =========================
+    # READ ENCRYPTED FILE
+    # =========================
+
+    encrypted_data = file.read()
 
     # =========================
     # UPLOAD TO SUPABASE STORAGE
     # =========================
 
-    supabase.storage.from_("files").upload(
+    try:
+
+        supabase.storage.from_(
+            "files"
+        ).upload(
+
         f"{session['user']}/{filename}",
-        encrypted
+
+        encrypted_data
+
+    )
+
+    except:
+
+        return jsonify({
+
+            "success": False,
+
+            "message":
+            "⚠ File already exists"
+
+        })
+
+    # =========================
+    # CURRENT TIME
+    # =========================
+
+    ist = pytz.timezone(
+        'Asia/Kolkata'
+    )
+
+    current_time = datetime.now(
+        ist
     )
 
     # =========================
-    # RSA SIGNATURE
+    # SAVE FILE METADATA
+    # =========================
+
+    supabase.table(
+        "files"
+    ).insert({
+
+        "username":
+        session['user'],
+
+        "filename":
+        filename,
+
+        "iv":
+        iv
+
+    }).execute()
+
+    # =========================
+    # SAVE UPLOAD TIME
+    # =========================
+
+    supabase.table(
+        "uploaded_files"
+    ).insert({
+
+        "username":
+        session['user'],
+
+        "filename":
+        filename,
+
+        "uploaded_at":
+        current_time.isoformat()
+
+    }).execute()
+
+    # =========================
+    # RSA DIGITAL SIGNATURE
     # =========================
 
     signature = private_key.sign(
-        encrypted,
+
+        encrypted_data,
+
         padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=padding.PSS.MAX_LENGTH
+
+            mgf=padding.MGF1(
+                hashes.SHA256()
+            ),
+
+            salt_length=
+            padding.PSS.MAX_LENGTH
+
         ),
+
         hashes.SHA256()
+
     )
 
-    # SAVE SIGNATURE TEMPORARILY
-    temp_sig_folder = "temp_signatures"
-    os.makedirs(temp_sig_folder, exist_ok=True)
+    # =========================
+    # SAVE SIGNATURE
+    # =========================
+
+    os.makedirs(
+
+        "temp_signatures",
+
+        exist_ok=True
+
+    )
 
     sig_path = os.path.join(
-        temp_sig_folder,
+
+        "temp_signatures",
+
         filename + ".sig"
+
     )
 
     with open(sig_path, "wb") as f:
+
         f.write(signature)
 
     # =========================
     # LOGS
     # =========================
 
-    ist = pytz.timezone('Asia/Kolkata')
+    supabase.table(
+        "logs"
+    ).insert({
 
-    current_time = datetime.now(ist)
+        "username":
+        session['user'],
 
-    supabase.table("logs").insert({
-        "username": session['user'],
-        "action": "UPLOAD",
-        "filename": filename,
-        "time": current_time.strftime("%Y-%m-%d %H:%M:%S")
+        "action":
+        "UPLOAD",
+
+        "filename":
+        filename,
+
+        "time":
+        current_time.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
     }).execute()
 
-    return redirect('/dashboard')
+    # =========================
+    # RESPONSE
+    # =========================
+
+    return jsonify({
+
+        "success": True,
+
+        "message":
+        "🔐 End-to-End Encrypted Upload Successful"
+
+    })
 
 # =========================
 # DOWNLOAD FILE
 # =========================
-
-@app.route('/download/<filename>', methods=['POST'])
+@app.route('/download/<filename>', methods=['GET'])
 def download(filename):
 
     if 'user' not in session:
         return redirect('/')
-
-    password = request.form['password']
-
-    key = generate_key(password)
-    cipher = Fernet(key)
 
     # =========================
     # DOWNLOAD ENCRYPTED FILE
     # =========================
 
     try:
-        encrypted = supabase.storage.from_("files").download(
-            f"{session['user']}/{filename}"
+
+        encrypted_file = (
+
+            supabase.storage
+            .from_("files")
+            .download(
+                f"{session['user']}/{filename}"
+            )
+
         )
 
     except:
-        return "❌ File not found"
+
+        return jsonify({
+
+            "error": "File not found"
+
+        })
 
     # =========================
-    # DECRYPT FILE
+    # FETCH IV
     # =========================
 
-    try:
-        decrypted = cipher.decrypt(encrypted)
+    file_data = supabase.table("files").select(
 
-    except:
-        return "❌ Wrong password!"
+        "iv"
 
-    # =========================
-    # TEMP DOWNLOAD FILE
-    # =========================
+    ).eq(
 
-    temp_folder = "temp_downloads"
+        "filename",
+        filename
 
-    os.makedirs(temp_folder, exist_ok=True)
+    ).eq(
 
-    temp_path = os.path.join(
-        temp_folder,
-        "temp_" + filename
-    )
+        "username",
+        session['user']
 
-    with open(temp_path, "wb") as f:
-        f.write(decrypted)
+    ).execute()
+
+    iv = file_data.data[0]['iv']
 
     # =========================
     # LOGS
     # =========================
 
-    ist = pytz.timezone('Asia/Kolkata')
+    ist = pytz.timezone(
+        'Asia/Kolkata'
+    )
 
     current_time = datetime.now(ist)
 
     supabase.table("logs").insert({
+
         "username": session['user'],
+
         "action": "DOWNLOAD",
+
         "filename": filename,
-        "time": current_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        "time": current_time.strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
     }).execute()
 
-    return send_file(temp_path, as_attachment=True)
+    # =========================
+    # RETURN FILE + IV
+    # =========================
+
+    return jsonify({
+
+        "file": base64.b64encode(
+            encrypted_file
+        ).decode(),
+
+        "iv": iv
+
+    })
+
 # =========================
 # DELETE FILE
 # =========================
 @app.route('/delete/<filename>', methods=['POST'])
 def delete_file(filename):
 
+    # =========================
+    # SESSION CHECK
+    # =========================
+
     if 'user' not in session:
         return redirect('/')
 
     try:
 
-        file_path = f"{session['user']}/{filename}"
+        file_path = (
+            f"{session['user']}/{filename}"
+        )
 
-        # DELETE FROM SUPABASE STORAGE
+        # =========================
+        # DELETE FROM STORAGE
+        # =========================
 
-        delete_response = supabase.storage.from_("files").remove([
+        delete_response = supabase.storage.from_(
+            "files"
+        ).remove([
+
             file_path
+
         ])
 
-        print("DELETE RESPONSE:", delete_response)
+        print(
+            "DELETE RESPONSE:",
+            delete_response
+        )
 
+        # =========================
+        # DELETE FROM FILES TABLE
+        # =========================
+
+        supabase.table(
+            "files"
+        ).delete().eq(
+
+            "filename",
+            filename
+
+        ).eq(
+
+            "username",
+            session['user']
+
+        ).execute()
+
+        # =========================
+        # DELETE FROM UPLOADED FILES
+        # =========================
+
+        supabase.table(
+            "uploaded_files"
+        ).delete().eq(
+
+            "filename",
+            filename
+
+        ).eq(
+
+            "username",
+            session['user']
+
+        ).execute()
+
+        # =========================
         # DELETE SHARED LINKS
+        # =========================
 
-        supabase.table("shared_links").delete().eq(
+        supabase.table(
+            "shared_links"
+        ).delete().eq(
+
             "filename",
             filename
+
         ).eq(
+
             "username",
             session['user']
+
         ).execute()
 
-        # DELETE OLD LOGS OF THIS FILE
+        # =========================
+        # DELETE OLD LOGS
+        # =========================
 
-        supabase.table("logs").delete().eq(
+        supabase.table(
+            "logs"
+        ).delete().eq(
+
             "filename",
             filename
+
         ).eq(
+
             "username",
             session['user']
+
         ).execute()
 
+        # =========================
         # ADD DELETE LOG
+        # =========================
 
-        ist = pytz.timezone('Asia/Kolkata')
+        ist = pytz.timezone(
+            'Asia/Kolkata'
+        )
 
-        current_time = datetime.now(ist)
+        current_time = datetime.now(
+            ist
+        )
 
-        supabase.table("logs").insert({
-            "username": session['user'],
-            "action": "DELETE",
-            "filename": filename,
-            "time": current_time.strftime("%Y-%m-%d %H:%M:%S")
+        supabase.table(
+            "logs"
+        ).insert({
+
+            "username":
+            session['user'],
+
+            "action":
+            "DELETE",
+
+            "filename":
+            filename,
+
+            "time":
+            current_time.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+
         }).execute()
 
     except Exception as e:
@@ -434,50 +825,124 @@ def delete_file(filename):
 # =========================
 # SHARE FILE
 # =========================
-
 @app.route('/share', methods=['POST'])
 def share():
+
+    # =========================
+    # SESSION CHECK
+    # =========================
 
     if 'user' not in session:
         return redirect('/')
 
+    # =========================
+    # FORM DATA
+    # =========================
+
     filename = request.form['filename']
-    share_password = request.form['share_password']
-    expiry_option = request.form['expiry']
+
+    share_password = request.form[
+        'share_password'
+    ]
+
+    expiry = request.form['expiry']
+
+    # =========================
+    # TOKEN
+    # =========================
 
     token = secrets.token_urlsafe(16)
 
-    ist = pytz.timezone('Asia/Kolkata')
+    # =========================
+    # TIMEZONE
+    # =========================
 
-    if expiry_option == '24h':
-        expiry_time = datetime.now(ist) + timedelta(hours=24)
-    else:
-        expiry_time = datetime.now(ist) + timedelta(days=7)
+    ist = pytz.timezone(
+        'Asia/Kolkata'
+    )
 
-    password_hash = generate_password_hash(share_password)
+    current_time = datetime.now(
+        ist
+    )
 
-    supabase.table("shared_links").insert({
+    # =========================
+    # ONE TIME OPTION
+    # =========================
+
+    one_time = False
+
+    # =========================
+    # EXPIRY
+    # =========================
+
+    if expiry == "one_time":
+
+        one_time = True
+
+        expiry_time = "One Time Access"
+
+    elif expiry == "24h":
+
+        expiry_time = (
+
+            current_time
+
+            + timedelta(hours=24)
+
+        ).isoformat()
+
+    elif expiry == "7d":
+
+        expiry_time = (
+
+            current_time
+
+            + timedelta(days=7)
+
+        ).isoformat()
+
+    # =========================
+    # SAVE LINK
+    # =========================
+
+    supabase.table(
+        "shared_links"
+    ).insert({
+
         "token": token,
+
         "filename": filename,
+
         "username": session['user'],
-        "password_hash": password_hash,
-        "expiry_time": expiry_time.isoformat()
+
+        "password_hash":
+        generate_password_hash(
+            share_password
+        ),
+
+        "expiry_time":
+        expiry_time,
+
+        "one_time":
+        one_time,
+
+        "created_at":
+        current_time.isoformat()
+
     }).execute()
 
     # =========================
-    # LOGS
+    # RESPONSE
     # =========================
 
-    current_time = datetime.now(ist)
+    return jsonify({
 
-    supabase.table("logs").insert({
-        "username": session['user'],
-        "action": "SHARE LINK CREATED",
-        "filename": filename,
-        "time": current_time.strftime("%Y-%m-%d %H:%M:%S")
-    }).execute()
+        "success": True,
 
-    return redirect('/dashboard')
+        "message":
+        "🔗 Secure share link created"
+
+    })
 
 # =========================
 # SHARED ACCESS
@@ -485,11 +950,16 @@ def share():
 @app.route('/shared/')
 def shared_home():
     return "Invalid shared link ❌"
-
 @app.route('/shared/<token>', methods=['GET', 'POST'])
 def shared(token):
 
-    result = supabase.table("shared_links").select("*").eq(
+    # =========================
+    # FETCH LINK
+    # =========================
+
+    result = supabase.table(
+        "shared_links"
+    ).select("*").eq(
         "token",
         token
     ).execute()
@@ -500,81 +970,143 @@ def shared(token):
     row = result.data[0]
 
     filename = row['filename']
+
     username = row['username']
+
     share_pwd_hash = row['password_hash']
+
     expiry_time = row['expiry_time']
 
-    expiry_time = datetime.fromisoformat(expiry_time)
+    one_time = row['one_time']
 
-    ist = pytz.timezone('Asia/Kolkata')
+    # =========================
+    # SKIP EXPIRY CHECK
+    # FOR ONE-TIME LINKS
+    # =========================
 
-    if datetime.now(ist) > expiry_time:
-        return "Link expired ❌"
+    if expiry_time != "One Time Access":
+
+        expiry_time = datetime.fromisoformat(
+            expiry_time
+        )
+
+        ist = pytz.timezone(
+            'Asia/Kolkata'
+        )
+
+        if datetime.now(ist) > expiry_time:
+
+            return "Link expired ❌"
+    # =========================
+    # POST REQUEST
+    # =========================
 
     if request.method == 'POST':
 
-        share_pwd = request.form.get('share_password')
-        file_pwd = request.form.get('file_password')
+        share_pwd = request.form.get(
+            'share_password'
+        )
+
+        file_pwd = request.form.get(
+            'file_password'
+        )
 
         # =========================
-        # CHECK SHARE PASSWORD
+        # VERIFY SHARE PASSWORD
         # =========================
 
         if share_pwd_hash and not check_password_hash(
+
             share_pwd_hash,
             share_pwd
+
         ):
+
             return "Wrong share password ❌"
 
         # =========================
-        # DOWNLOAD FILE FROM SUPABASE
+        # DOWNLOAD ENCRYPTED FILE
         # =========================
 
         try:
-            encrypted = supabase.storage.from_("files").download(
-                f"{username}/{filename}"
+
+            encrypted = (
+                supabase.storage
+                .from_("files")
+                .download(
+                    f"{username}/{filename}"
+                )
             )
 
         except:
+
             return "File not found ❌"
 
         # =========================
         # DECRYPT FILE
         # =========================
-
-        key = generate_key(file_pwd)
-        cipher = Fernet(key)
-
-        try:
-            decrypted = cipher.decrypt(encrypted)
-
-        except:
-            return "Wrong file password ❌"
-
         # =========================
-        # TEMP DOWNLOAD FILE
+        # FETCH IV
         # =========================
 
-        temp_folder = "temp_downloads"
+        file_data = supabase.table("files").select(
+        "iv"
+        ).eq(
+            "filename",
+            filename
+        ).eq(
+            "username",
+            username
+        ).execute()
 
-        os.makedirs(temp_folder, exist_ok=True)
+        iv = file_data.data[0]['iv']
 
-        temp_path = os.path.join(
-            temp_folder,
-            "temp_" + filename
-        )
+        
+        # =========================
+        # DELETE ONE-TIME LINK
+        # =========================
 
-        with open(temp_path, "wb") as f:
-            f.write(decrypted)
+        if one_time:
 
-        return send_file(
-            temp_path,
-            as_attachment=True
-        )
+            supabase.table(
+                "shared_links"
+            ).delete().eq(
+
+                "token",
+                token
+
+            ).execute()
+
+        # =========================
+        # SEND FILE
+        # =========================
+
+        # =========================
+        # RETURN ENCRYPTED FILE
+        # =========================
+
+        return jsonify({
+
+            "file": base64.b64encode(
+            encrypted
+        ).decode(),
+
+        "iv": iv,
+
+        "filename": filename
+
+        })
+
+    # =========================
+    # RENDER PAGE
+    # =========================
 
     return render_template(
+
         'shared.html',
+
         token=token
+
     )
 
 # =========================
