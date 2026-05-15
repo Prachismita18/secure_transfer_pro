@@ -218,7 +218,9 @@ def forgot_password():
 
     if request.method == 'POST':
 
-        email = request.form['email']
+        email = request.form[
+            'email'
+        ].strip().lower()
 
         # =========================
         # CHECK USER
@@ -294,7 +296,15 @@ This OTP expires in 5 minutes.
 Secure Transfer Pro
 """
 
-            mail.send(msg)
+            try:
+
+                mail.send(msg)
+
+            except Exception as e:
+
+                print(e)
+
+                return str(e)
 
         except Exception as e:
 
@@ -623,7 +633,9 @@ def signup():
 
         username = request.form['username']
 
-        email = request.form['email']
+        email = request.form[
+            'email'
+        ].strip().lower()
 
         password = request.form['password']
 
