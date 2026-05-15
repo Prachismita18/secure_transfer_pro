@@ -46,7 +46,9 @@ app.config['MAIL_USE_TLS'] = True
 
 app.config['MAIL_USERNAME'] = 'cryptix.1805@gmail.com'
 
-app.config['MAIL_PASSWORD'] = 'hefq xmet ohky vbsi'
+app.config['MAIL_PASSWORD'] = 'hefqxmetohkyvbsi'
+
+app.config['MAIL_TIMEOUT'] = 10
 
 mail = Mail(app)
 
