@@ -302,9 +302,9 @@ Secure Transfer Pro
 
             except Exception as e:
 
-                print(e)
+                print("MAIL ERROR:", e)
 
-                return str(e)
+                return f"MAIL ERROR: {e}"
 
         except Exception as e:
 
