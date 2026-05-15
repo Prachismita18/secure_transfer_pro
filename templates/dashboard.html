@@ -148,6 +148,18 @@
 
                     </div>
 
+                    <!-- CHANGE FILE PASSWORD -->
+
+                    <a href="/change-file-password/{{ file }}">
+
+                        <button type="button"
+                                class="icon-btn change-password-btn">
+
+                            🔄
+
+                        </button>
+
+                    </a>
                     <!-- SHARE -->
 
                     <form class="inline-form share-form">
@@ -188,18 +200,23 @@
 
                     <!-- DELETE -->
 
-                    <form action="/delete/{{ file }}"
-                          method="POST">
+                    <div class="inline-form">
 
-                        <button type="submit"
-                                class="icon-btn delete-btn">
+                        <input type="password"
+                            id="delete-password-{{ loop.index }}"
+                            placeholder="Delete password">
+                        <button type="button"
+                            class="icon-btn delete-btn"
 
-                            <i class="fa-solid fa-trash"></i>
+                            onclick="verifyAndDelete(
+                            '{{ file }}',
+                            'delete-password-{{ loop.index }}'
+                            )">
+
+                        <i class="fa-solid fa-trash"></i>
 
                         </button>
-
-                    </form>
-
+                    </div>
                 </div>
 
             {% endfor %}
@@ -390,46 +407,39 @@ async function encryptAndUpload() {
         return;
     }
 
+    // =========================
+    // READ FILE
+    // =========================
+
     const fileBuffer =
         await file.arrayBuffer();
 
-    const keyMaterial =
+    // =========================
+    // CREATE AES KEY
+    // =========================
+
+    const aesKey =
         await window.crypto.subtle.importKey(
 
             "raw",
 
-            new TextEncoder().encode(password),
+            new TextEncoder().encode(
+                password.padEnd(32, "0").slice(0,32)
+            ),
 
-            { name: "PBKDF2" },
+            {
+                name:"AES-GCM"
+            },
 
             false,
 
-            ["deriveKey"]
+            ["encrypt"]
 
         );
 
-    const aesKey =
-        await window.crypto.subtle.deriveKey(
-
-            {
-                name: "PBKDF2",
-                salt: new Uint8Array(16),
-                iterations: 100000,
-                hash: "SHA-256"
-            },
-
-            keyMaterial,
-
-            {
-                name: "AES-GCM",
-                length: 256
-            },
-
-            true,
-
-            ["encrypt", "decrypt"]
-
-        );
+    // =========================
+    // GENERATE IV
+    // =========================
 
     const iv =
         window.crypto.getRandomValues(
@@ -437,6 +447,10 @@ async function encryptAndUpload() {
         );
 
     globalIV = Array.from(iv);
+
+    // =========================
+    // ENCRYPT FILE
+    // =========================
 
     const encrypted =
         await window.crypto.subtle.encrypt(
@@ -452,7 +466,12 @@ async function encryptAndUpload() {
 
         );
 
-    const formData = new FormData();
+    // =========================
+    // FORM DATA
+    // =========================
+
+    const formData =
+        new FormData();
 
     formData.append(
         "file",
@@ -464,6 +483,15 @@ async function encryptAndUpload() {
         "iv",
         JSON.stringify(globalIV)
     );
+
+    formData.append(
+        "file_password",
+        password
+    );
+
+    // =========================
+    // UPLOAD
+    // =========================
 
     fetch("/upload", {
 
@@ -500,13 +528,22 @@ async function encryptAndUpload() {
 
             popup.remove();
 
-            if (data.success) {
+        }, 2000);
 
-                window.location.reload();
+        // =========================
+        // REFRESH DASHBOARD
+        // =========================
 
-            }
+        if (data.success) {
 
-        }, 5000);
+            setTimeout(() => {
+
+                window.location.href =
+                    "/dashboard";
+
+            }, 1000);
+
+        }
 
     });
 
@@ -589,118 +626,128 @@ async function downloadAndDecrypt(
             passwordId
         ).value;
 
+    // =========================
+    // EMPTY PASSWORD
+    // =========================
+
     if (!password) {
 
-        alert(
-            "Enter file password"
+        showPopup(
+            "Enter file password ❌",
+            false
         );
 
         return;
     }
 
     // =========================
-    // FETCH FILE + IV
+    // LOADING POPUP
     // =========================
 
-    const response =
-        await fetch(
+    const loading =
+        document.createElement("div");
 
-            `/download/${filename}`
+    loading.className =
+        "success-popup";
 
-        );
+    loading.innerHTML =
+        "🔄 Decrypting secure file...";
 
-    const data =
-        await response.json();
-
-    // =========================
-    // BASE64 → BUFFER
-    // =========================
-
-    const binary =
-        atob(data.file);
-
-    const bytes =
-        new Uint8Array(
-            binary.length
-        );
-
-    for (
-        let i = 0;
-        i < binary.length;
-        i++
-    ) {
-
-        bytes[i] =
-            binary.charCodeAt(i);
-
-    }
-
-    const encryptedBuffer =
-        bytes.buffer;
-
-    // =========================
-    // IV
-    // =========================
-
-    const iv =
-        new Uint8Array(
-
-            JSON.parse(data.iv)
-
-        );
-
-    // =========================
-    // CREATE AES KEY
-    // =========================
-
-    const keyMaterial =
-        await window.crypto.subtle.importKey(
-
-            "raw",
-
-            new TextEncoder().encode(
-                password
-            ),
-
-            {
-                name: "PBKDF2"
-            },
-
-            false,
-
-            ["deriveKey"]
-
-        );
-
-    const aesKey =
-        await window.crypto.subtle.deriveKey(
-
-            {
-                name: "PBKDF2",
-
-                salt:
-                new Uint8Array(16),
-
-                iterations: 100000,
-
-                hash: "SHA-256"
-            },
-
-            keyMaterial,
-
-            {
-                name: "AES-GCM",
-
-                length: 256
-            },
-
-            true,
-
-            ["decrypt"]
-
-        );
+    document.body.appendChild(
+        loading
+    );
 
     try {
+
+        // =========================
+        // FETCH FILE
+        // =========================
+
+        const response =
+            await fetch(
+
+                `/download/${filename}`
+
+            );
+
+        const data =
+            await response.json();
+
+        // =========================
+        // SERVER ERROR
+        // =========================
+
+        if (!data.success) {
+
+            loading.remove();
+
+            showPopup(
+                data.error,
+                false
+            );
+
+            return;
+        }
+
+        // =========================
+        // BASE64 → BUFFER
+        // =========================
+
+        const binary =
+            atob(data.file);
+
+        const bytes =
+            new Uint8Array(
+                binary.length
+            );
+
+        for (
+            let i = 0;
+            i < binary.length;
+            i++
+        ) {
+
+            bytes[i] =
+                binary.charCodeAt(i);
+
+        }
+
+        const encryptedBuffer =
+            bytes.buffer;
+
+        // =========================
+        // IV
+        // =========================
+
+        const iv =
+            new Uint8Array(
+
+                JSON.parse(data.iv)
+
+            );
+
+        // =========================
+        // CREATE AES KEY
+        // =========================
+
+        const aesKey =
+            await window.crypto.subtle.importKey(
+
+                "raw",
+
+                new TextEncoder().encode(
+                    password.padEnd(32, "0").slice(0,32)
+                ),
+
+                {
+                    name:"AES-GCM"
+                },
+
+                false,
+
+                ["decrypt"]
+
+            );
 
         // =========================
         // DECRYPT
@@ -720,6 +767,12 @@ async function downloadAndDecrypt(
                 encryptedBuffer
 
             );
+
+        // =========================
+        // REMOVE LOADING
+        // =========================
+
+        loading.remove();
 
         // =========================
         // DOWNLOAD ORIGINAL FILE
@@ -750,12 +803,248 @@ async function downloadAndDecrypt(
 
         a.remove();
 
+        // =========================
+        // SUCCESS
+        // =========================
+
+        if (data.verified) {
+
+        showPopup(
+            "✅ Verified Secure File",
+            true
+        );
+
+}
     }
 
     catch {
 
-        alert(
-            "Wrong password ❌"
+    loading.remove();
+
+    window.location.href =
+
+        `/wrong-file-password/${filename}`;
+
+}
+    if (confirmRecover) {
+
+        window.location.href =
+
+            `/recover-file-password/${filename}`;
+
+    }
+
+}
+
+
+
+// =====================================
+// GLOBAL POPUP FUNCTION
+// =====================================
+
+function showPopup(
+    message,
+    success=true
+) {
+
+    const popup =
+        document.createElement("div");
+
+    popup.className =
+        "success-popup";
+
+    popup.innerHTML =
+        message;
+
+    if (!success) {
+
+        popup.style.background =
+            "#ff4b5c";
+
+    }
+
+    document.body.appendChild(
+        popup
+    );
+
+    setTimeout(() => {
+
+        popup.remove();
+
+    }, 4000);
+
+}
+
+
+</script>
+
+<script>
+
+async function verifyAndDelete(
+    filename,
+    passwordId
+) {
+
+    const password =
+        document.getElementById(
+            passwordId
+        ).value;
+
+    // =========================
+    // EMPTY PASSWORD
+    // =========================
+
+    if (!password) {
+
+        showPopup(
+            "Enter file password ❌",
+            false
+        );
+
+        return;
+    }
+
+    try {
+
+        // =========================
+        // FETCH FILE
+        // =========================
+
+        const response =
+            await fetch(
+
+                `/download/${filename}`
+
+            );
+
+        const data =
+            await response.json();
+
+        // =========================
+        // BASE64 → BUFFER
+        // =========================
+
+        const binary =
+            atob(data.file);
+
+        const bytes =
+            new Uint8Array(
+                binary.length
+            );
+
+        for (
+            let i = 0;
+            i < binary.length;
+            i++
+        ) {
+
+            bytes[i] =
+                binary.charCodeAt(i);
+
+        }
+
+        const encryptedBuffer =
+            bytes.buffer;
+
+        // =========================
+        // IV
+        // =========================
+
+        const iv =
+            new Uint8Array(
+
+                JSON.parse(data.iv)
+
+            );
+
+        // =========================
+        // CREATE AES KEY
+        // =========================
+
+        const aesKey =
+            await window.crypto.subtle.importKey(
+
+                "raw",
+
+                new TextEncoder().encode(
+                    password.padEnd(32, "0").slice(0,32)
+                ),
+
+                {
+                    name:"AES-GCM"
+                },
+
+                false,
+
+                ["decrypt"]
+
+            );
+
+        // =========================
+        // VERIFY PASSWORD
+        // =========================
+
+        await window.crypto.subtle.decrypt(
+
+            {
+                name: "AES-GCM",
+
+                iv: iv
+            },
+
+            aesKey,
+
+            encryptedBuffer
+
+        );
+
+        // =========================
+        // DELETE FILE
+        // =========================
+
+        const formData =
+            new FormData();
+
+        formData.append(
+            "file_password",
+            password
+        );
+
+        await fetch(
+
+            `/delete/${filename}`,
+
+            {
+
+                method: "POST",
+
+                body: formData
+
+            }
+
+        );
+
+        // =========================
+        // SUCCESS
+        // =========================
+
+        showPopup(
+            "🗑 File deleted successfully"
+        );
+
+        setTimeout(() => {
+
+            window.location.reload();
+
+        }, 1500);
+
+    }
+
+    catch {
+
+        showPopup(
+            "❌ Wrong file password",
+            false
         );
 
     }

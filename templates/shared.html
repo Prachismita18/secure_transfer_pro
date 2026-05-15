@@ -20,6 +20,10 @@
             🔗 Secure Shared File
         </h2>
 
+        <p class="shared-info">
+            End-to-End Encrypted Access
+        </p>
+
         <form id="sharedForm">
 
             <input type="password"
@@ -32,8 +36,11 @@
                    placeholder="File Password"
                    required>
 
-            <button type="submit">
-                Download File
+            <button type="submit"
+                    id="downloadBtn">
+
+                Download Secure File
+
             </button>
 
         </form>
@@ -43,6 +50,47 @@
 </div>
 
 <script>
+
+// =====================================
+// POPUP
+// =====================================
+
+function showPopup(
+    message,
+    success=true
+) {
+
+    const popup =
+        document.createElement("div");
+
+    popup.className =
+        "success-popup";
+
+    popup.innerHTML =
+        message;
+
+    if (!success) {
+
+        popup.style.background =
+            "#ff4b5c";
+
+    }
+
+    document.body.appendChild(
+        popup
+    );
+
+    setTimeout(() => {
+
+        popup.remove();
+
+    }, 4000);
+
+}
+
+// =====================================
+// SHARED DOWNLOAD
+// =====================================
 
 document.getElementById(
     "sharedForm"
@@ -65,106 +113,130 @@ document.getElementById(
             ).value;
 
         // =========================
-        // SEND PASSWORDS
+        // BUTTON LOADING
         // =========================
 
-        const response = await fetch(
-            window.location.pathname,
-
-            {
-
-                method: "POST",
-
-                headers: {
-
-                    "Content-Type":
-                    "application/x-www-form-urlencoded"
-
-                },
-
-                body:
-                    `share_password=${encodeURIComponent(share_password)}&file_password=${encodeURIComponent(file_password)}`
-
-            }
-        );
-
-        const data =
-            await response.json();
-
-        // =========================
-        // BASE64 → BUFFER
-        // =========================
-
-        const binary =
-            atob(data.file);
-
-        const bytes =
-            new Uint8Array(binary.length);
-
-        for (let i = 0; i < binary.length; i++) {
-
-            bytes[i] =
-                binary.charCodeAt(i);
-
-        }
-
-        const encryptedBuffer =
-            bytes.buffer;
-
-        // =========================
-        // IV
-        // =========================
-
-        const iv =
-            new Uint8Array(
-                JSON.parse(data.iv)
+        const btn =
+            document.getElementById(
+                "downloadBtn"
             );
 
-        // =========================
-        // CREATE AES KEY
-        // =========================
+        btn.innerHTML =
+            "Decrypting...";
 
-        const keyMaterial =
-            await window.crypto.subtle.importKey(
-
-                "raw",
-
-                new TextEncoder().encode(
-                    file_password
-                ),
-
-                { name: "PBKDF2" },
-
-                false,
-
-                ["deriveKey"]
-
-            );
-
-        const aesKey =
-            await window.crypto.subtle.deriveKey(
-
-                {
-                    name: "PBKDF2",
-                    salt: new Uint8Array(16),
-                    iterations: 100000,
-                    hash: "SHA-256"
-                },
-
-                keyMaterial,
-
-                {
-                    name: "AES-GCM",
-                    length: 256
-                },
-
-                true,
-
-                ["decrypt"]
-
-            );
+        btn.disabled = true;
 
         try {
+
+            // =========================
+            // SEND PASSWORDS
+            // =========================
+
+            const response =
+                await fetch(
+
+                    window.location.pathname,
+
+                    {
+
+                        method: "POST",
+
+                        headers: {
+
+                            "Content-Type":
+                            "application/x-www-form-urlencoded"
+
+                        },
+
+                        body:
+
+                        `share_password=${encodeURIComponent(share_password)}&file_password=${encodeURIComponent(file_password)}`
+
+                    }
+
+                );
+
+            const data =
+                await response.json();
+
+            // =========================
+            // SERVER ERROR
+            // =========================
+
+            if (!data.success) {
+
+                btn.innerHTML =
+                    "Download Secure File";
+
+                btn.disabled = false;
+
+                showPopup(
+                    data.error,
+                    false
+                );
+
+                return;
+            }
+
+            // =========================
+            // BASE64 → BUFFER
+            // =========================
+
+            const binary =
+                atob(data.file);
+
+            const bytes =
+                new Uint8Array(
+                    binary.length
+                );
+
+            for (
+                let i = 0;
+                i < binary.length;
+                i++
+            ) {
+
+                bytes[i] =
+                    binary.charCodeAt(i);
+
+            }
+
+            const encryptedBuffer =
+                bytes.buffer;
+
+            // =========================
+            // IV
+            // =========================
+
+            const iv =
+                new Uint8Array(
+
+                    JSON.parse(data.iv)
+
+                );
+
+            // =========================
+            // CREATE AES KEY
+            // =========================
+
+            const aesKey =
+                await window.crypto.subtle.importKey(
+
+                    "raw",
+
+                    new TextEncoder().encode(
+                        file_password.padEnd(32, "0").slice(0,32)
+                    ),
+
+                    {
+                        name:"AES-GCM"
+                    },
+
+                    false,
+
+                    ["decrypt"]
+
+                );
 
             // =========================
             // DECRYPT
@@ -175,6 +247,7 @@ document.getElementById(
 
                     {
                         name: "AES-GCM",
+
                         iv: iv
                     },
 
@@ -185,14 +258,16 @@ document.getElementById(
                 );
 
             // =========================
-            // DOWNLOAD ORIGINAL FILE
+            // DOWNLOAD
             // =========================
 
             const blob =
                 new Blob([decrypted]);
 
             const url =
-                window.URL.createObjectURL(blob);
+                window.URL.createObjectURL(
+                    blob
+                );
 
             const a =
                 document.createElement("a");
@@ -211,15 +286,33 @@ document.getElementById(
 
             a.remove();
 
+            // =========================
+            // SUCCESS
+            // =========================
+
+            showPopup(
+                "✅ Secure file decrypted successfully"
+            );
+
         }
 
         catch {
 
-            alert(
-                "Wrong file password ❌"
+            showPopup(
+                "❌ Wrong file password",
+                false
             );
 
         }
+
+        // =========================
+        // RESET BUTTON
+        // =========================
+
+        btn.innerHTML =
+            "Download Secure File";
+
+        btn.disabled = false;
 
     }
 

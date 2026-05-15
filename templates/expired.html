@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>Secure Link Status</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <style>
+
+        body {
+
+            margin: 0;
+
+            padding: 0;
+
+            background: #0f172a;
+
+            font-family: Arial, sans-serif;
+
+            display: flex;
+
+            justify-content: center;
+
+            align-items: center;
+
+            height: 100vh;
+
+        }
+
+        .expired-card {
+
+            background: white;
+
+            padding: 40px;
+
+            border-radius: 18px;
+
+            text-align: center;
+
+            width: 400px;
+
+            box-shadow:
+            0 10px 40px rgba(0,0,0,0.3);
+
+        }
+
+        .expired-icon {
+
+            font-size: 70px;
+
+            margin-bottom: 20px;
+
+        }
+
+        .expired-text {
+
+            font-size: 24px;
+
+            font-weight: bold;
+
+            color: #ff4b5c;
+
+            margin-bottom: 15px;
+
+        }
+
+        .expired-sub {
+
+            color: #555;
+
+            font-size: 15px;
+
+            line-height: 1.6;
+
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+    <div class="expired-card">
+
+        <div class="expired-icon">
+            🔒
+        </div>
+
+        <div class="expired-text">
+
+            {{ message }}
+
+        </div>
+
+        <div class="expired-sub">
+
+            This secure shared link
+            is no longer accessible.
+
+            <br><br>
+
+            Please request a new
+            encrypted share link
+            from the sender.
+
+        </div>
+
+    </div>
+
+</body>
+
+</html>

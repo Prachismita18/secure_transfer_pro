@@ -3,7 +3,7 @@
 
 <head>
 
-    <title>Login</title>
+    <title>Verify OTP</title>
 
     <link rel="stylesheet"
           href="{{ url_for('static', filename='style.css') }}">
@@ -17,7 +17,7 @@
     <div class="login-card">
 
         <h2>
-            🔐 Secure Login
+            📧 Verify OTP
         </h2>
 
         <!-- FLASH MESSAGES -->
@@ -38,52 +38,33 @@
             {% endif %}
         {% endwith %}
 
-        <!-- LOGIN FORM -->
+        <!-- OTP FORM -->
 
-        <form action="/login"
-              method="POST">
+        <form method="POST">
 
-            <input type="email"
-                   name="email"
-                   placeholder="Email Address"
+            <input type="text"
+                   name="otp"
+                   placeholder="Enter OTP"
                    required>
 
             <input type="password"
-                   name="password"
-                   placeholder="Password"
+                   name="new_password"
+                   placeholder="New Password"
                    required>
 
             <button type="submit">
 
-                Login
+                Reset Password
 
             </button>
 
         </form>
 
-        <!-- FORGOT PASSWORD -->
-
         <p>
 
-            <a href="/forgot-password">
+            OTP sent to:
 
-                Forgot Password?
-
-            </a>
-
-        </p>
-
-        <!-- SIGNUP -->
-
-        <p>
-
-            Don't have an account?
-
-            <a href="/signup">
-
-                Sign Up
-
-            </a>
+            <b>{{ email }}</b>
 
         </p>
 

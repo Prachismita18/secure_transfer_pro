@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>Error</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<div class="login-page">
+
+    <div class="login-card">
+
+        <h2>
+            ❌ Something Went Wrong
+        </h2>
+
+        <div class="flash-message">
+
+            {{ error_message }}
+
+        </div>
+
+        <a href="/">
+
+            <button>
+
+                Back to Login
+
+            </button>
+
+        </a>
+
+    </div>
+
+</div>
+
+</body>
+
+</html>

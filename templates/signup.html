@@ -2,10 +2,12 @@
 <html>
 
 <head>
+
     <title>Sign Up</title>
 
     <link rel="stylesheet"
           href="{{ url_for('static', filename='style.css') }}">
+
 </head>
 
 <body>
@@ -14,9 +16,11 @@
 
     <div class="signup-card">
 
-        <h2>📝 Create Account</h2>
+        <h2>
+            📝 Create Account
+        </h2>
 
-        <!-- Flash Messages -->
+        <!-- FLASH MESSAGES -->
 
         {% with messages = get_flashed_messages() %}
             {% if messages %}
@@ -32,13 +36,19 @@
             {% endif %}
         {% endwith %}
 
-        <!-- Signup Form -->
+        <!-- SIGNUP FORM -->
 
-        <form action="/signup" method="POST">
+        <form action="/signup"
+              method="POST">
 
             <input type="text"
                    name="username"
                    placeholder="Username"
+                   required>
+
+            <input type="email"
+                   name="email"
+                   placeholder="Email Address"
                    required>
 
             <input type="password"
@@ -47,7 +57,9 @@
                    required>
 
             <button type="submit">
+
                 Sign Up
+
             </button>
 
         </form>
