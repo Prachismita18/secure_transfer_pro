@@ -46,9 +46,13 @@ app.config['MAIL_USE_TLS'] = False
 
 app.config['MAIL_USE_SSL'] = True
 
-app.config['MAIL_USERNAME'] = 'cryptix.1805@gmail.com'
+app.config['MAIL_USERNAME'] = os.getenv(
+    'MAIL_USERNAME'
+)
 
-app.config['MAIL_PASSWORD'] = 'xccprhpyoghixuch'
+app.config['MAIL_PASSWORD'] = os.getenv(
+    'MAIL_PASSWORD'
+)
 
 app.config['MAIL_TIMEOUT'] = 15
 
