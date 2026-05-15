@@ -4,3 +4,4 @@ gunicorn
 werkzeug
 pytz
 supabase
+Flask-Mail
