@@ -1,5 +1,4 @@
 # app.py
-from flask_mail import Mail, Message
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from supabase import create_client, Client
@@ -11,6 +10,7 @@ import os
 import base64
 import hashlib
 import random
+import requests
 
 from flask import (
     Flask,
@@ -33,32 +33,6 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 app = Flask(__name__)
 app.secret_key = "supersecretkey"
-
-# =========================
-# EMAIL CONFIG
-# =========================
-app.config['MAIL_SERVER'] = os.getenv(
-    'MAIL_SERVER'
-)
-
-app.config['MAIL_PORT'] = int(
-    os.getenv('MAIL_PORT')
-)
-
-app.config['MAIL_USE_TLS'] = True
-
-app.config['MAIL_USE_SSL'] = False
-
-app.config['MAIL_USERNAME'] = os.getenv(
-    'MAIL_USERNAME'
-)
-
-app.config['MAIL_PASSWORD'] = os.getenv(
-    'MAIL_PASSWORD'
-)
-
-app.config['MAIL_TIMEOUT'] = 15
-mail = Mail(app)
 
 # =========================
 # OTP STORAGE
@@ -266,7 +240,9 @@ def forgot_password():
             )
         )
 
+        # =========================
         # SAVE OTP
+        # =========================
 
         otp_store[email] = {
 
@@ -279,53 +255,100 @@ def forgot_password():
         }
 
         # =========================
-        # SEND EMAIL
+        # SEND EMAIL USING BREVO API
         # =========================
 
         try:
 
-            msg = Message(
+            headers = {
 
-                'Secure Transfer Pro OTP',
+                "accept":
+                "application/json",
 
-                sender=
-                app.config['MAIL_USERNAME'],
+                "api-key":
+                os.getenv(
+                    "BREVO_API_KEY"
+                ),
 
-                recipients=[email]
+                "content-type":
+                "application/json"
+
+            }
+
+            data = {
+
+                "sender": {
+
+                    "name":
+                    "Secure Transfer Pro",
+
+                    "email":
+                    "cryptix.1805@gmail.com"
+
+                },
+
+                "to": [
+
+                    {
+
+                        "email":
+                        email
+
+                    }
+
+                ],
+
+                "subject":
+                "Secure Transfer Pro OTP",
+
+                "htmlContent":
+
+                f"""
+
+                <h2>Password Recovery OTP</h2>
+
+                <p>Your OTP is:</p>
+
+                <h1>{otp}</h1>
+
+                <p>
+                This OTP expires in 5 minutes.
+                </p>
+
+                """
+
+            }
+
+            response = requests.post(
+
+                "https://api.brevo.com/v3/smtp/email",
+
+                json=data,
+
+                headers=headers,
+
+                timeout=15
 
             )
 
-            msg.body = f"""
-
-Your OTP for password recovery is:
-
-{otp}
-
-This OTP expires in 5 minutes.
-
-Secure Transfer Pro
-"""
-
-            try:
-
-                mail.send(msg)
-
-            except Exception as e:
-
-                print("MAIL ERROR:", e)
-
-                return f"MAIL ERROR: {e}"
+            print(response.text)
 
         except Exception as e:
+
+            print("EMAIL ERROR:", e)
 
             return render_template(
 
                 'error.html',
 
                 error_message=
-                "Unable to send OTP email ❌"
+                f"Unable to send OTP ❌ {e}"
 
             )
+
+        # =========================
+        # SUCCESS
+        # =========================
 
         flash(
             "OTP sent to your email ✅"
