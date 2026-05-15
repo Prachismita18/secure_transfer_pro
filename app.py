@@ -749,36 +749,85 @@ def signup():
         }
 
         # =========================
-        # SEND OTP EMAIL
+        # SEND OTP EMAIL USING BREVO
         # =========================
 
         try:
 
-            msg = Message(
+            headers = {
 
-                'Secure Transfer Pro Signup OTP',
+                "accept":
+                "application/json",
 
-                sender=
-                app.config['MAIL_USERNAME'],
+                "api-key":
+                os.getenv(
+                    "BREVO_API_KEY"
+                ),
 
-                recipients=[email]
+                "content-type":
+                "application/json"
+
+            }
+
+            data = {
+
+                "sender": {
+
+                    "name":
+                    "Secure Transfer Pro",
+
+                    "email":
+                    "cryptix.1805@gmail.com"
+
+                },
+
+                "to": [
+
+                    {
+
+                        "email":
+                        email
+
+                    }
+
+                ],
+
+                "subject":
+                "Secure Transfer Pro Signup OTP",
+
+                "htmlContent":
+
+                f"""
+
+                <h2>Hello {username}</h2>
+
+                <p>
+                Your OTP for account verification is:
+                </p>
+
+                <h1>{otp}</h1>
+
+                <p>
+                This OTP expires in 5 minutes.
+                </p>
+
+                """
+
+            }
+
+            response = requests.post(
+
+                "https://api.brevo.com/v3/smtp/email",
+
+                json=data,
+
+                headers=headers,
+
+                timeout=15
 
             )
 
-            msg.body = f"""
-
-Hello {username},
-
-Your OTP for account verification is:
-
-{otp}
-
-This OTP expires in 5 minutes.
-
-Secure Transfer Pro
-"""
-
-            mail.send(msg)
+            print(response.text)
 
         except Exception as e:
 
