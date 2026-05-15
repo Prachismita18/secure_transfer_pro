@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+    <title>
+        Verify Signup OTP
+    </title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<div class="login-page">
+
+    <div class="signup-card">
+
+        <h2>
+            🔐 Verify Signup OTP
+        </h2>
+
+        <!-- FLASH MESSAGES -->
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+
+                {% for message in messages %}
+
+                    <div class="flash-message">
+                        {{ message }}
+                    </div>
+
+                {% endfor %}
+
+            {% endif %}
+        {% endwith %}
+
+        <!-- OTP FORM -->
+
+        <form method="POST">
+
+            <input type="text"
+                   name="otp"
+                   placeholder="Enter OTP"
+                   required>
+
+            <button type="submit">
+
+                Verify OTP
+
+            </button>
+
+        </form>
+
+    </div>
+
+</div>
+
+</body>
+
+</html>
